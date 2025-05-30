@@ -1,5 +1,4 @@
--- Ensure you have selected the 'airoport_syst' database in phpMyAdmin before running this.
--- If it doesn't exist, create it first:
+
 -- CREATE DATABASE IF NOT EXISTS `airoport_syst` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 -- USE `airoport_syst`;
 
@@ -306,12 +305,6 @@ INSERT INTO `Booking` (`state`, `CustomerID`, `FlightID`, `GeneralFlightID`) VAL
 (1, 'NATID12345', 1, 1), -- Ahmed on ALG-CZL (FlightID 1, which correctly uses GeneralFlightID 1)
 (0, 'NATID67890', 2, 2); -- Sara on ALG-CDG (FlightID 2, which correctly uses GeneralFlightID 2)
 
--- An example of a third booking to test seat limits if GFID 1 had only 2 seats.
--- Assume GeneralFlightID 1 now has NumberSeats = 2 for testing.
--- UPDATE GeneralFlight SET NumberSeats = 2 WHERE GeneralFlightID = 1;
+
 -- INSERT INTO `Booking` (`state`, `CustomerID`, `FlightID`, `GeneralFlightID`) VALUES
 -- (1, 'NATID11223', 1, 1); -- John Doe tries to book on ALG-CZL.
--- The above insert should FAIL if GeneralFlightID 1 has 2 seats and 2 are already booked by Ahmed & Sara.
--- The trigger `update_seats_onbooking` would signal an error.
--- Remember to reset NumberSeats for GFID 1 if you test this.
--- UPDATE GeneralFlight SET NumberSeats = 150 WHERE GeneralFlightID = 1;
