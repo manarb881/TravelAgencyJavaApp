@@ -1,0 +1,317 @@
+-- Ensure you have selected the 'airoport_syst' database in phpMyAdmin before running this.
+-- If it doesn't exist, create it first:
+-- CREATE DATABASE IF NOT EXISTS `airoport_syst` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+-- USE `airoport_syst`;
+
+-- ---
+-- Table structure for table `City`
+-- ---
+DROP TABLE IF EXISTS `Booking`;
+DROP TABLE IF EXISTS `Flight`;
+DROP TABLE IF EXISTS `GeneralFlight`;
+DROP TABLE IF EXISTS `Customer`;
+DROP TABLE IF EXISTS `Aircraft`;
+DROP TABLE IF EXISTS `Airline`;
+DROP TABLE IF EXISTS `Airport`;
+DROP TABLE IF EXISTS `City`;
+
+CREATE TABLE `City` (
+  `CityID` int(11) NOT NULL AUTO_INCREMENT,
+  `CityName` varchar(100) NOT NULL,
+  PRIMARY KEY (`CityID`),
+  UNIQUE KEY `CityName_UNIQUE` (`CityName`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---
+-- Table structure for table `Airport`
+-- ---
+CREATE TABLE `Airport` (
+  `AirportID` int(11) NOT NULL AUTO_INCREMENT,
+  `AirportName` varchar(100) NOT NULL,
+  `CityID` int(11) NOT NULL,
+  PRIMARY KEY (`AirportID`),
+  KEY `FK_Airport_City` (`CityID`),
+  CONSTRAINT `FK_Airport_City` FOREIGN KEY (`CityID`) REFERENCES `City` (`CityID`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---
+-- Table structure for table `Airline`
+-- ---
+CREATE TABLE `Airline` (
+  `AirlineID` int(11) NOT NULL AUTO_INCREMENT,
+  `AirlineName` varchar(100) NOT NULL,
+  PRIMARY KEY (`AirlineID`),
+  UNIQUE KEY `AirlineName_UNIQUE` (`AirlineName`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---
+-- Table structure for table `Aircraft`
+-- ---
+CREATE TABLE `Aircraft` (
+  `AircraftID` int(11) NOT NULL AUTO_INCREMENT,
+  `AircraftName` varchar(100) NOT NULL,
+  PRIMARY KEY (`AircraftID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---
+-- Table structure for table `Customer`
+-- ---
+CREATE TABLE `Customer` (
+  `CustomerID` varchar(50) NOT NULL, -- Provided by user, e.g., National ID
+  `fname` varchar(100) NOT NULL,
+  `lname` varchar(100) NOT NULL,
+  `address` varchar(255) DEFAULT NULL,
+  `email` varchar(100) NOT NULL,
+  `phoneNumber` varchar(20) DEFAULT NULL,
+  PRIMARY KEY (`CustomerID`),
+  UNIQUE KEY `email_UNIQUE` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---
+-- Table structure for table `GeneralFlight`
+-- ---
+CREATE TABLE `GeneralFlight` (
+  `GeneralFlightID` int(11) NOT NULL AUTO_INCREMENT,
+  `TakeoffTime` time NOT NULL,
+  `ArrivalTime` time NOT NULL,
+  `FDay` date NOT NULL COMMENT 'Reference day for the schedule pattern',
+  `DepAirport` int(11) NOT NULL,
+  `ArrAirport` int(11) NOT NULL,
+  `AirlineID` int(11) NOT NULL,
+  `NumberSeats` int(11) NOT NULL DEFAULT 0,
+  `seats_booked` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`GeneralFlightID`),
+  KEY `FK_GeneralFlight_DepAirport` (`DepAirport`),
+  KEY `FK_GeneralFlight_ArrAirport` (`ArrAirport`),
+  KEY `FK_GeneralFlight_Airline` (`AirlineID`),
+  CONSTRAINT `FK_GeneralFlight_Airline` FOREIGN KEY (`AirlineID`) REFERENCES `Airline` (`AirlineID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `FK_GeneralFlight_ArrAirport` FOREIGN KEY (`ArrAirport`) REFERENCES `Airport` (`AirportID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `FK_GeneralFlight_DepAirport` FOREIGN KEY (`DepAirport`) REFERENCES `Airport` (`AirportID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `CHK_Seats` CHECK (`seats_booked` <= `NumberSeats` AND `seats_booked` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---
+-- Table structure for table `Flight` (Operational Flight Instance)
+-- ---
+CREATE TABLE `Flight` (
+  `FlightID` int(11) NOT NULL AUTO_INCREMENT,
+  `TakeOffDate` date NOT NULL,
+  `ArrivalDate` date NOT NULL,
+  `State` int(11) NOT NULL COMMENT '0=Scheduled, 1=In Progress, 2=Completed, 3=Cancelled',
+  `GeneralFlightID` int(11) NOT NULL,
+  `AircraftID` int(11) DEFAULT NULL,
+  PRIMARY KEY (`FlightID`),
+  KEY `FK_Flight_GeneralFlight` (`GeneralFlightID`),
+  KEY `FK_Flight_Aircraft` (`AircraftID`),
+  CONSTRAINT `FK_Flight_Aircraft` FOREIGN KEY (`AircraftID`) REFERENCES `Aircraft` (`AircraftID`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `FK_Flight_GeneralFlight` FOREIGN KEY (`GeneralFlightID`) REFERENCES `GeneralFlight` (`GeneralFlightID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `CHK_FlightDates` CHECK (`ArrivalDate` >= `TakeOffDate`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---
+-- Table structure for table `Booking`
+-- ---
+CREATE TABLE `Booking` (
+  `BookingNumber` int(11) NOT NULL AUTO_INCREMENT,
+  `state` int(11) NOT NULL COMMENT '0=Pending, 1=Confirmed, 2=Cancelled',
+  `CustomerID` varchar(50) NOT NULL,
+  `FlightID` int(11) NOT NULL,
+  `GeneralFlightID` int(11) NOT NULL COMMENT 'Consistent with Flight.GeneralFlightID; used by triggers',
+  `BookingDate` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`BookingNumber`),
+  KEY `FK_Booking_Customer` (`CustomerID`),
+  KEY `FK_Booking_Flight` (`FlightID`),
+  KEY `FK_Booking_GeneralFlight_Ref` (`GeneralFlightID`),
+  CONSTRAINT `FK_Booking_Customer` FOREIGN KEY (`CustomerID`) REFERENCES `Customer` (`CustomerID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `FK_Booking_Flight` FOREIGN KEY (`FlightID`) REFERENCES `Flight` (`FlightID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `FK_Booking_GeneralFlight_Ref` FOREIGN KEY (`GeneralFlightID`) REFERENCES `GeneralFlight` (`GeneralFlightID`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ---
+-- Trigger: update_seats_onbooking (BEFORE INSERT on Booking)
+-- ---
+DELIMITER $$
+CREATE TRIGGER `update_seats_onbooking` BEFORE INSERT ON `Booking`
+FOR EACH ROW
+BEGIN
+    DECLARE available_seats INT;
+    DECLARE flight_schedule_id_from_flight_table INT;
+
+    -- Get the GeneralFlightID from the Flight table linked by NEW.FlightID for consistency
+    SELECT F.GeneralFlightID INTO flight_schedule_id_from_flight_table
+    FROM Flight F
+    WHERE F.FlightID = NEW.FlightID;
+    
+    IF flight_schedule_id_from_flight_table IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Invalid FlightID provided, or the selected Flight does not exist or has no GeneralFlight link.';
+    END IF;
+
+    -- Ensure NEW.GeneralFlightID matches the one from the Flight table
+    SET NEW.GeneralFlightID = flight_schedule_id_from_flight_table;
+
+    SELECT (GF.NumberSeats - GF.seats_booked) INTO available_seats
+    FROM GeneralFlight GF
+    WHERE GF.GeneralFlightID = NEW.GeneralFlightID;
+
+    IF available_seats <= 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'No available seats for this flight schedule.';
+    ELSE
+        UPDATE GeneralFlight GF
+        SET GF.seats_booked = GF.seats_booked + 1
+        WHERE GF.GeneralFlightID = NEW.GeneralFlightID;
+    END IF;
+END$$
+DELIMITER ;
+
+-- ---
+-- Trigger: trg_booking_update_seats (BEFORE UPDATE on Booking)
+-- ---
+DELIMITER $$
+CREATE TRIGGER `trg_booking_update_seats`
+BEFORE UPDATE ON `Booking`
+FOR EACH ROW
+BEGIN
+    DECLARE available_seats INT;
+    DECLARE flight_schedule_id_for_update INT;
+
+    -- Use OLD.GeneralFlightID as it represents the existing link for the booking being updated
+    SET flight_schedule_id_for_update = OLD.GeneralFlightID;
+
+    -- CASE 1: Booking is being CANCELLED (was active, now cancelled)
+    IF (OLD.state <> 2 AND NEW.state = 2) THEN
+        UPDATE `GeneralFlight`
+        SET `seats_booked` = GREATEST(0, `seats_booked` - 1) -- Ensure seats_booked doesn't go below 0
+        WHERE `GeneralFlightID` = flight_schedule_id_for_update;
+
+    -- CASE 2: Booking is being UN-CANCELLED / RE-ACTIVATED (was cancelled, now active)
+    ELSEIF (OLD.state = 2 AND NEW.state <> 2) THEN
+        SELECT (GF.NumberSeats - GF.seats_booked) INTO available_seats
+        FROM `GeneralFlight` GF
+        WHERE GF.GeneralFlightID = flight_schedule_id_for_update;
+
+        IF available_seats <= 0 THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Cannot re-activate booking: No available seats on this flight schedule.';
+        ELSE
+            UPDATE `GeneralFlight`
+            SET `seats_booked` = `seats_booked` + 1
+            WHERE `GeneralFlightID` = flight_schedule_id_for_update;
+        END IF;
+    END IF;
+    -- If OLD.state and NEW.state are both active (e.g., pending to confirmed), or both cancelled,
+    -- or if the state is not changing for seat purposes, no seat adjustment is made by this trigger.
+END$$
+DELIMITER ;
+
+
+-- ---
+-- Stored Procedure: SP_GetBookingDetails
+-- ---
+DELIMITER //
+CREATE PROCEDURE `SP_GetBookingDetails` (IN `p_booking_number` INT)
+BEGIN
+    SELECT
+        b.BookingNumber,
+        b.state AS BookingState,
+        b.BookingDate,
+        cu.CustomerID,
+        cu.fname AS CustomerFirstName,
+        cu.lname AS CustomerLastName,
+        cu.email AS CustomerEmail,
+        cu.address AS CustomerAddress,
+        cu.phoneNumber AS CustomerPhone,
+        fl.FlightID,
+        fl.TakeOffDate AS FlightTakeOffDate,
+        fl.ArrivalDate AS FlightArrivalDate,
+        fl.State AS FlightState,
+        gf.GeneralFlightID,
+        CONCAT(fl.TakeOffDate, ' ', gf.TakeoffTime) AS GeneralFlightScheduledDeparture,
+        CONCAT(fl.ArrivalDate, ' ', gf.ArrivalTime) AS GeneralFlightScheduledArrival,
+        gf.NumberSeats,
+        gf.seats_booked,
+        dep_ap.AirportName AS DepartureAirport,
+        dep_city.CityName AS DepartureCity,
+        arr_ap.AirportName AS ArrivalAirport,
+        arr_city.CityName AS ArrivalCity,
+        al.AirlineName,
+        ac.AircraftName
+    FROM Booking b
+    JOIN Customer cu ON b.CustomerID = cu.CustomerID
+    JOIN Flight fl ON b.FlightID = fl.FlightID
+    JOIN GeneralFlight gf ON fl.GeneralFlightID = gf.GeneralFlightID -- b.GeneralFlightID is kept consistent by triggers
+    JOIN Airport dep_ap ON gf.DepAirport = dep_ap.AirportID
+    JOIN City dep_city ON dep_ap.CityID = dep_city.CityID
+    JOIN Airport arr_ap ON gf.ArrAirport = arr_ap.AirportID
+    JOIN City arr_city ON arr_ap.CityID = arr_city.CityID
+    JOIN Airline al ON gf.AirlineID = al.AirlineID
+    LEFT JOIN Aircraft ac ON fl.AircraftID = ac.AircraftID
+    WHERE b.BookingNumber = p_booking_number;
+END //
+DELIMITER ;
+
+
+-- ---
+-- Sample Data (Simplified for easier insertion, assuming IDs start from 1)
+-- Run this section only after all table, trigger, and procedure definitions are created.
+-- ---
+
+-- Cities
+INSERT INTO `City` (`CityName`) VALUES
+('Algiers'), ('Constantine'), ('Oran'), ('Paris'), ('London');
+
+-- Airports (Assuming CityIDs 1-5 from above, in order)
+INSERT INTO `Airport` (`AirportName`, `CityID`) VALUES
+('Houari Boumediene Airport', 1),
+('Mohamed Boudiaf International Airport', 2),
+('Oran Es Sénia Airport', 3),
+('Charles de Gaulle Airport', 4),
+('Heathrow Airport', 5);
+
+-- Airlines (Assuming AirlineIDs 1-4)
+INSERT INTO `Airline` (`AirlineName`) VALUES
+('Air Algérie'), ('Tassili Airlines'), ('Air France'), ('British Airways');
+
+-- Aircraft (Assuming AircraftIDs 1-4)
+INSERT INTO `Aircraft` (`AircraftName`) VALUES
+('Boeing 737-800'), ('Airbus A320neo'), ('ATR 72-600'), ('Boeing 777-300ER');
+
+-- Customers (CustomerID is provided)
+INSERT INTO `Customer` (`CustomerID`, `fname`, `lname`, `address`, `email`, `phoneNumber`) VALUES
+('NATID12345', 'Ahmed', 'Benali', '12 Rue El Mokrani, Algiers', 'ahmed.benali@example.com', '0555123456'),
+('NATID67890', 'Sara', 'Meziane', '45 Rue Emir Abdelkader, Constantine', 'sara.meziane@example.com', '0655654321'),
+('NATID11223', 'John', 'Doe', '1 Baker Street, London', 'john.doe.uk@example.com', '+442071234567');
+
+-- GeneralFlights (Schedules - Assuming AirportIDs 1-5, AirlineIDs 1-4)
+-- GeneralFlightIDs will be 1, 2, 3
+INSERT INTO `GeneralFlight` (`TakeoffTime`, `ArrivalTime`, `FDay`, `DepAirport`, `ArrAirport`, `AirlineID`, `NumberSeats`) VALUES
+('08:00:00', '09:00:00', '2024-01-01', 1, 2, 1, 150), -- ALG to CZL, Air Algérie
+('10:00:00', '12:30:00', '2024-01-01', 1, 4, 3, 200), -- ALG to CDG, Air France
+('14:00:00', '15:00:00', '2024-01-01', 3, 1, 2, 70);  -- ORN to ALG, Tassili Airlines
+
+-- Flight (Operational Instances - Assuming GeneralFlightIDs 1-3, AircraftIDs 1-3)
+-- FlightIDs will be 1, 2, 3
+INSERT INTO `Flight` (`TakeOffDate`, `ArrivalDate`, `State`, `GeneralFlightID`, `AircraftID`) VALUES
+('2024-08-15', '2024-08-15', 0, 1, 1), -- ALG-CZL (GFID 1) using Boeing 737 (AircraftID 1)
+('2024-08-16', '2024-08-16', 0, 2, 2), -- ALG-CDG (GFID 2) using Airbus A320 (AircraftID 2)
+('2024-08-17', '2024-08-17', 1, 3, 3); -- ORN-ALG (GFID 3) using ATR 72 (AircraftID 3)
+
+
+-- Bookings (Assuming CustomerIDs and FlightIDs 1-2)
+-- BookingNumber will be AUTO_INCREMENT.
+-- The trigger 'update_seats_onbooking' handles GeneralFlightID and seat counts.
+INSERT INTO `Booking` (`state`, `CustomerID`, `FlightID`, `GeneralFlightID`) VALUES
+(1, 'NATID12345', 1, 1), -- Ahmed on ALG-CZL (FlightID 1, which correctly uses GeneralFlightID 1)
+(0, 'NATID67890', 2, 2); -- Sara on ALG-CDG (FlightID 2, which correctly uses GeneralFlightID 2)
+
+-- An example of a third booking to test seat limits if GFID 1 had only 2 seats.
+-- Assume GeneralFlightID 1 now has NumberSeats = 2 for testing.
+-- UPDATE GeneralFlight SET NumberSeats = 2 WHERE GeneralFlightID = 1;
+-- INSERT INTO `Booking` (`state`, `CustomerID`, `FlightID`, `GeneralFlightID`) VALUES
+-- (1, 'NATID11223', 1, 1); -- John Doe tries to book on ALG-CZL.
+-- The above insert should FAIL if GeneralFlightID 1 has 2 seats and 2 are already booked by Ahmed & Sara.
+-- The trigger `update_seats_onbooking` would signal an error.
+-- Remember to reset NumberSeats for GFID 1 if you test this.
+-- UPDATE GeneralFlight SET NumberSeats = 150 WHERE GeneralFlightID = 1;
